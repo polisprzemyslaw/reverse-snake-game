@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>Odwrotny Snake</title>
+</head>
+<body>
+    <div id="game-container">
+        <svg id="bar" width="600" height="100">
+            <defs>
+                <linearGradient id="gradient" x1="0" x2="1" y1="1" y2="1">
+                    <stop offset="0%" stop-color="rgb(245,245,245)"/>
+                    <stop offset="100%" stop-color="rgb(200,200,200)"/>
+                </linearGradient>
+            </defs>
+            <rect width="599" height="95" fill = "url(#gradient)" rx="5" stroke="gray"></rect>
+            <text id="title" x="80" y="30" font-size="24" fill="black">You are snake food - how long can you survive?</text>
+            <text id="time" x="40" y="80" font-size="24" fill="black" font-weight="bold">Time: 0:00</text>
+            <text id="best-time" x="350" y="80" font-size="24" fill="black" font-weight="bold">Best Time: 0:00</text>
+        </svg>
+        <svg id="grid" width="600" height="600" style="border: 2px solid black; background: #f0f0f0;">
+            <defs>
+                <pattern id="cell" width="20" height="20" patternUnits="userSpaceOnUse">
+                    <rect width="20" height="20" fill="none" stroke="gray" stroke-width="1"/>
+                </pattern>
+            </defs>
+            <rect></rect>
+            <rect width="100%" height="100%" fill="url(#cell)"/>
+            <rect id="player" x="300" y="300" width="20" height="20" fill="red" stroke="black"/>
+
+        </svg>
+    </div>
+
+
+    <style>
+
+        body {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #game-container {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            width: 800px;
+            height: 800px;
+        }
+
+    </style>
+
+    <script>
+
+        //ruch gracza strzałkami
+        function movePlayer() {
+
+            let now = Date.now()
+            
+            if(keysPressed["ArrowUp"]) {
+                if (player.y.baseVal.value > 0) {
+                    player.y.baseVal.value -= 20;
+                }
+            }
+            else if(keysPressed["ArrowLeft"]) {
+                if (player.x.baseVal.value > 0) {
+                    player.x.baseVal.value -= 20;
+                }
+            }
+            else if(keysPressed["ArrowDown"]) {
+                if (player.y.baseVal.value < 580) {
+                    player.y.baseVal.value += 20;
+                }
+            }
+            else if(keysPressed["ArrowRight"]) {
+                if (player.x.baseVal.value < 580) {
+                    player.x.baseVal.value += 20;
+                }
+            }
+        }
+
+        //zapisanie wciśniętego klawisza
+        function keyDown(event) {
+            if (["ArrowUp", "ArrowLeft", "ArrowDown", "ArrowRight"].includes(event.code)) {
+                event.preventDefault();
+                keysPressed[event.code] = true;
+            } 
+        }
+
+        //usunięcie wciśniętego klawisza
+        function keyUp(event) {
+            if (["ArrowUp", "ArrowLeft", "ArrowDown", "ArrowRight"].includes(event.code)) {
+                event.preventDefault();
+                keysPressed[event.code] = false;
+            } 
+        }
+
+
+        //tworzenie nowego węża
+        function createSnake(length, type) {
+            let snakeParts = [];
+
+            let shoots = false;
+            let speed;
+            let color;
+
+            //różnice między typami węży
+            switch (type){
+                case "default":
+                    speed = 600;
+                    color = "blue";
+                    break;
+                case "fast":
+                    speed = 400;
+                    color = "green";
+                    break;
+                case "shooting":
+                    speed = 800;
+                    shoots = true;
+                    color = "orange";
+                    break;
+                case "crazy":
+                    speed = 200;
+                    color = "magenta";
+                    break;
+            }
+
+            let possiblePos = [];
+
+            const playerX = player.x.baseVal.value;
+            const playerY = player.y.baseVal.value;
+            
+            //możliwe punkty początkowe węża
+            for (let x = 0; x < 580; x += 20) {
+                for (let y = 0; y < 580; y += 20) {
+                    possiblePos.push({x, y});
+                }
+            }
+            //usunięcie punktów obok gracza
+            possiblePos = possiblePos.filter( pos => {
+                let distance = Math.sqrt((pos.x - playerX)**2 + (pos.y - playerY)**2);
+                return distance >= 100;
+            })
+
+            //wybór losowego punktu
+            const randomPos = possiblePos[Math.floor(Math.random() * possiblePos.length)];
+
+            //tworzenie węża jako obiekty "rect"
+            for (let i = 0; i < length; i++) {
+                const snakePart = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                snakePart.setAttribute("class", "snakePart");
+                snakePart.setAttribute("x", randomPos.x);
+                snakePart.setAttribute("y", randomPos.y);
+                snakePart.setAttribute("width", 20);
+                snakePart.setAttribute("height", 20);
+                snakePart.setAttribute("fill", color);
+                snakePart.setAttribute("stroke", "black");
+                grid.append(snakePart)
+                snakeParts.push(snakePart);
+            }
+
+            //tworzenie obiektu węża
+            const snake = {
+                parts: snakeParts,
+                type: type,
+                speed: speed,
+                lastShot: Date.now(),
+                lastMove: Date.now(),
+                createTime: Date.now()
+            }
+
+            //dodanie węża do tablicy
+            snakes.push(snake);
+        }
+
+        //ruch węża
+        function moveSnake(snake) {
+
+            let now = Date.now();
+
+            const head = snake.parts[0];
+            const xHead = head.x.baseVal.value;
+            const yHead = head.y.baseVal.value;
+            const xPlayer = player.x.baseVal.value;
+            const yPlayer = player.y.baseVal.value;
+            let xDist = xHead - xPlayer;
+            let yDist = yHead - yPlayer;
+
+            minX = xDist;
+            minY = yDist;
+            //obliczenie dystansu od węża do gracza
+            minDist = Math.sqrt((xHead - xPlayer)**2 + (yHead - yPlayer)**2)
+
+            //obliczenie dystansów do jedzeń i wybranie najbliższego (jedzenia lub gracza)
+            let food = document.querySelectorAll(".food");
+            for (let f of food) {
+                const xFood = f.x.baseVal.value;
+                const yFood = f.y.baseVal.value;
+                xDist = xHead - xFood;
+                yDist = yHead - yFood;
+                let dist = Math.sqrt((xHead - xFood)**2 + (yHead - yFood)**2)
+                if (dist < minDist) {
+                    minDist = dist;
+                    minX = xDist;
+                    minY = yDist;
+                }
+            }
+
+            let dx = 0;
+            let dy = 0;
+
+            //wybór kierunku ruchu na podstawie różnicy między pozycjami
+            if (Math.abs(minX) > Math.abs(minY)) {
+                if (minX < 0) dx = 20;
+                else dx = -20;
+            }
+            else {
+                if (minY < 0) dy = 20;
+                else dy = -20;
+            }
+
+            //sprawdzenie pozycji drugiego "rect" węża, żeby nie zawrócił sam w siebie o 180 stopni
+            if (head.x.baseVal.value + dx === snake.parts[1].x.baseVal.value && head.y.baseVal.value + dy === snake.parts[1].y.baseVal.value) {
+                if (dx !== 0) {
+                    dy = dx;
+                    dx = 0;
+                }
+                else {
+                    dx = dy
+                    dy = 0;
+                }
+            }
+
+            //przesunięcie głowy węża
+            head.x.baseVal.value += dx;
+            head.y.baseVal.value += dy;
+
+            //strzelenie jeśli wąż jest typu "shooting"
+            if (snake.type === "shooting" && now - snake.lastShot > 3000) {
+                shootBullet(snake, dx, dy)
+                snake.lastShot = now;
+            }
+            
+            let previousX = xHead;
+            let previousY = yHead;
+
+            //przesunięcie reszty części węża podążając za głową
+            for (let i = 1; i < snake.parts.length; i++) {
+                const beforeMoveX = snake.parts[i].x.baseVal.value;
+                const beforeMoveY = snake.parts[i].y.baseVal.value;
+
+                snake.parts[i].x.baseVal.value = previousX;
+                snake.parts[i].y.baseVal.value = previousY;
+
+                previousX = beforeMoveX;
+                previousY = beforeMoveY;
+            }
+        }
+
+        //wykonanie ruchu przez wszystkie węże
+        function moveAllSnakes() {
+
+            let now = Date.now();
+
+            for (const snake of snakes) {
+                if (now - snake.lastMove >= snake.speed) {
+                    moveSnake(snake, now);
+                    snake.lastMove = now;
+                }
+            }
+        }
+
+        //liczenie czasu
+        function countTime() {
+            seconds++;
+            document.querySelector("#time").textContent = `Time: ${getFormattedTime(seconds)}`;
+        }
+
+        //sprawdzenie kolizji węży
+        function checkSnakeCollision() {
+            food = document.querySelectorAll(".food");
+            if(snakes.length < 1) return;
+            for (let snake of snakes) {
+                for (let part of snake.parts) {
+                    //reset jeśli wąż dotknął gracza
+                    if (player.x.baseVal.value === part.x.baseVal.value && player.y.baseVal.value === part.y.baseVal.value) {
+                        reset();
+                        return;
+                    }
+                    //usunięcie jedzenia jeśli wąż je zjadł
+                    for (let f of food) {
+                        if (f.x.baseVal.value === part.x.baseVal.value && f.y.baseVal.value === part.y.baseVal.value) {
+                            if (grid.contains(f)) {
+                                grid.removeChild(f);
+                            }
+                        }
+                    }
+                }
+            }
+
+            let snakesToRemove = [];
+
+            let now = Date.now();
+
+            //sprawdzenie kolizji węży z innymi wężami
+            for (let snake of snakes) {
+                    let head = snake.parts[0];
+
+                    let removed = false;
+
+                    for (let s of snakes) {
+
+                        // 3 sekundy "nieśmiertelności" żeby wąż nie umarł od razu po pojawieniu się
+                        if (snake === s && (now - snake.createTime < 3000)) {
+                            continue;
+                        }
+
+                        //sprawdzenie kolizji głowy węża ze innymi częściami wszystkich węży
+                        for (let i = 0; i < s.parts.length; i++) {
+                            let part = s.parts[i];
+                            //pominięcie głowy tego samego węża
+                            if (snake === s && i === 0) continue;
+                            if (head.x.baseVal.value === part.x.baseVal.value && head.y.baseVal.value === part.y.baseVal.value) {
+                                //oznaczenie węża do usunięcia
+                                snakesToRemove.push(snake);
+                                removed = true;
+                                break;
+                            }
+                        }
+                        //jeśli wąż ma być usunięty pomijanie sprawdzania kolizji z resztą węży
+                        if (removed) break;
+                    }
+                }
+
+            //usunięcie węży
+            for (let snake of snakesToRemove) {
+                for (let part of snake.parts) {
+                    if(grid.contains(part));
+                    {
+                        grid.removeChild(part);
+                    }
+                }
+                snakes.splice(snakes.indexOf(snake), 1);
+            }
+        }
+
+
+        //reset planszy
+        function reset() {
+
+            //usunięcie wszystkich "rect" węży
+            if (snakes.length > 0) {
+                for (let snake of snakes) {
+                    for (let part of snake.parts) {
+                        grid.removeChild(part);
+                    }
+                }
+            }
+
+            //usunięcie "rect" pocisków
+            if (bullets.length > 0) {
+                for (let bullet of bullets) {
+                    grid.removeChild(bullet.rect);
+                }
+            }
+
+            //usunięcie "rect" jedzenia
+            food = document.querySelectorAll(".food");
+            if (food.length > 0) {
+                for (let f of food) {
+                    grid.removeChild(f);
+                }
+            }
+
+            //reset początkowego stanu
+            snakes = [];
+            bullets = [];
+            foodRate = 3000;
+            player.setAttribute("x", 300);
+            player.setAttribute("y", 300);
+            createSnake(Math.floor(Math.random() * 3) + 3, "default");
+            createSnake(Math.floor(Math.random() * 3) + 3, "default");
+            createSnake(Math.floor(Math.random() * 3) + 3, "default");
+            resetTime();
+        }
+
+        //zwrócenie czasu w formacie do wyświetlenia
+        function getFormattedTime(seconds) {
+            let sec = seconds % 60;
+            if (sec < 10) sec = `0${sec}`;
+            let min = Math.floor(seconds / 60);
+            return `${min}:${sec}`;
+        }
+
+        //restart czasu i zapisanie jeśli jest najlepszy
+        function resetTime() {
+            bestTime = (seconds > bestTime) ? seconds : bestTime;
+            document.querySelector("#best-time").textContent = `Best Time: ${getFormattedTime(bestTime)}`;
+            document.querySelector("#time").textContent = "Time: 0:00"
+            seconds = 0;
+            timeSnakesMoved = 0;
+            timeSnakeCreated = Date.now();
+        }
+
+        //wystrzelenie pocisku
+        function shootBullet(snake, dx, dy) {
+            x = snake.parts[0].x.baseVal.value;
+            y = snake.parts[0].y.baseVal.value;
+
+            //stworzenie pocisku
+            const bulletRect = document.createElementNS("http://www.w3.org/2000/svg", "rect")
+            bulletRect.setAttribute("class", "bullet");
+            bulletRect.setAttribute("x", x + 5);
+            bulletRect.setAttribute("y", y + 5);
+            bulletRect.setAttribute("height", 10);
+            bulletRect.setAttribute("width", 10);
+            bulletRect.setAttribute("stroke", "black");
+            bulletRect.setAttribute("fill", "yellow");
+            grid.appendChild(bulletRect);
+
+            //obiekt pocisku
+            bullets.push({
+                rect: bulletRect,
+                dx: dx,
+                dy: dy,
+                lastMoveTime: Date.now()
+            });
+        }
+
+        //ruch wszystkich pocisków
+        function moveBullets() {
+
+            let now = Date.now();
+
+            //zmiana pozycji pocisków oraz odfiltrowanie tych które wyszły za planszę
+            bullets = bullets.filter(bullet => {
+                if(now - bullet.lastMoveTime <= bulletSpeed) return true;
+
+                let bx = bullet.rect.x.baseVal.value;
+                let by = bullet.rect.y.baseVal.value;
+
+                if (bx < 0 || bx > 790 || by < 0 || by > 790) {
+                    grid.removeChild(bullet.rect);
+                    return false;
+                }
+                bullet.rect.x.baseVal.value += bullet.dx;
+                bullet.rect.y.baseVal.value += bullet.dy;
+                bullet.lastMoveTime = now;
+                return true;
+            })
+        }
+
+        //sprawdzenie czy pocisk trafił gracza
+        function checkBulletCollision() {
+            for (let bullet of bullets) {
+                let bx = bullet.rect.x.baseVal.value;
+                let by = bullet.rect.y.baseVal.value;
+                let px = player.x.baseVal.value + 5;
+                let py = player.y.baseVal.value + 5;
+                if (bx === px && by === py) {
+                    reset();
+                }
+            }
+        }
+
+        //stworzenie "rect" jedzenia w losowym miejscu
+        function createFood() {
+            const randomX = Math.floor(Math.random() * 30) * 20; 
+            const randomY = Math.floor(Math.random() * 30) * 20; 
+            const food = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            food.setAttribute("class", "food");
+            food.setAttribute("x", randomX);
+            food.setAttribute("y", randomY);
+            food.setAttribute("width", 20);
+            food.setAttribute("height", 20);
+            food.setAttribute("fill", "black");
+            food.setAttribute("stroke", "black");
+            grid.appendChild(food);
+        }
+
+        //co ile ms dzieją się dane rzeczy
+        const createSnakeRate = 6000;
+        const bulletSpeed = 60;
+        const playerSpeed = 100;
+        let foodRate = 3000;
+
+        //czas ostatniego zdarzenia
+        let timeSnakeCreated = Date.now();
+        let timePlayerMoved = Date.now();
+        let timeSinceSecond = Date.now();
+        let timeSinceFood = Date.now();
+
+        //Główna pętla
+        function mainLoop() {
+
+            const now = Date.now();
+
+            //ruch gracza
+            if (now - timePlayerMoved > playerSpeed) {
+                movePlayer(now);
+                timePlayerMoved = now;
+            }
+
+            //ruch węży, pocisków i sprawdzanie kolizji
+            moveAllSnakes();
+            checkSnakeCollision();
+            moveBullets();
+            checkBulletCollision();
+
+            //liczenie czasu co 1 sekundę
+            if (now - timeSinceSecond > 1000) {
+                countTime();
+                timeSinceSecond = now;
+            }
+            //tworzenie jedzenia
+            if (now - timeSinceFood > foodRate) {
+                createFood();
+                timeSinceFood = now;
+            }
+            
+            //tworzenie różnych typów węży w losowej pozycji na podstawie czasu jaki minął
+            if (now - timeSnakeCreated > createSnakeRate) {
+                if (seconds > 120) {     
+                    createSnake(Math.floor(Math.random() * 3) + 3, "shooting");
+                    createSnake(Math.floor(Math.random() * 3) + 3, "shooting");
+                    createSnake(Math.floor(Math.random() * 3) + 3, "crazy");
+                    createSnake(Math.floor(Math.random() * 3) + 3, "crazy");
+                    foodRate = 300;
+                }
+                if (seconds > 100) {     
+                    createSnake(Math.floor(Math.random() * 3) + 3, "shooting");
+                    createSnake(Math.floor(Math.random() * 3) + 3, "crazy");
+                    createSnake(Math.floor(Math.random() * 3) + 3, "crazy");
+                    foodRate = 500;
+                }
+                if (seconds > 80) {
+                    createSnake(Math.floor(Math.random() * 3) + 3, "fast");
+                    createSnake(Math.floor(Math.random() * 3) + 3, "crazy");
+                    createSnake(Math.floor(Math.random() * 3) + 3, "crazy");
+                    foodRate = 700;
+                }
+                else if (seconds > 60) {
+                    createSnake(Math.floor(Math.random() * 3) + 3, "fast");
+                    createSnake(Math.floor(Math.random() * 3) + 3, "fast");
+                    createSnake(Math.floor(Math.random() * 3) + 3, "crazy");
+                    foodRate = 900;
+                }
+                else if (seconds > 50) {
+                    createSnake(Math.floor(Math.random() * 3) + 3, "fast");    
+                    createSnake(Math.floor(Math.random() * 3) + 3, "fast");
+                    createSnake(Math.floor(Math.random() * 3) + 3, "fast");
+                    foodRate = 1200;
+                }
+                else if (seconds > 40) {  
+                    createSnake(Math.floor(Math.random() * 3) + 3, "fast");    
+                    createSnake(Math.floor(Math.random() * 3) + 3, "fast");      
+                    createSnake(Math.floor(Math.random() * 3) + 3, "default"); 
+                    foodRate = 1500;
+                }
+                else if (seconds > 30) {
+                    createSnake(Math.floor(Math.random() * 3) + 3, "default");
+                    createSnake(Math.floor(Math.random() * 3) + 3, "fast");
+                    foodRate = 2000;
+                }
+                else if (seconds > 20){
+                    createSnake(Math.floor(Math.random() * 3) + 3, "default");
+                    createSnake(Math.floor(Math.random() * 3) + 3, "default");
+                    createSnake(Math.floor(Math.random() * 3) + 3, "default");
+                    foodRate = 2500;
+                }
+                else if (seconds > 10){
+                    createSnake(Math.floor(Math.random() * 3) + 3, "default");
+                    createSnake(Math.floor(Math.random() * 3) + 3, "default");
+                    foodRate = 2500;
+                }
+                else {
+                    createSnake(Math.floor(Math.random() * 3) + 3, "default");
+                }
+
+                timeSnakeCreated = now;
+            }
+        }
+
+        const player = document.querySelector("#player");
+        const grid = document.querySelector("#grid");
+        
+        //tablice na węże i pociski
+        let snakes = [];
+        let bullets = [];
+        
+        //zmienne przechowujące czas w sekundach
+        let bestTime = 0;
+        let seconds = 0;
+
+        //obiekt przechowujący informacje które przyciski są wciśnięte
+        const keysPressed = {};
+        document.addEventListener("keydown", keyDown);
+        document.addEventListener("keyup", keyUp);
+        //początkowy reset planszy
+        reset();
+        //uruchomienie głównej pętli co 20 ms
+        setInterval(mainLoop, 20);
+
+    </script>
